@@ -66,15 +66,15 @@ func (m model) detailHeader(w int) string {
 		star = stylePink.Render(" ★")
 	}
 	title := styleTitle.Render(truncate(e.Title, w-2)) + star
-	meta := strings.Join([]string{
-		styleMuted.Render("vol " + fmtUSD(e.Volume)),
-		styleSubtle.Render("24h " + fmtUSD(e.Volume24hr)),
-		styleSubtle.Render("liq " + fmtUSD(e.Liquidity)),
-		styleSubtle.Render("OI " + fmtUSD(e.OpenInterest)),
-		styleSubtle.Render("ends " + humanizeUntil(e.EndsAt())),
-		styleSubtle.Render(plural(len(e.Markets), "outcome")),
-	}, styleFaint.Render(" · "))
-	return lipgloss.JoinVertical(lipgloss.Left, title, truncate(meta, w))
+	meta := metaLine(w,
+		"vol "+fmtUSD(e.Volume),
+		"24h "+fmtUSD(e.Volume24hr),
+		"liq "+fmtUSD(e.Liquidity),
+		"OI "+fmtUSD(e.OpenInterest),
+		"ends "+humanizeUntil(e.EndsAt()),
+		plural(len(e.Markets), "outcome"),
+	)
+	return lipgloss.JoinVertical(lipgloss.Left, title, meta)
 }
 
 // outcomesPanel lists the markets within the event with animated bars.

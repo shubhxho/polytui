@@ -191,13 +191,12 @@ func (m model) eventRow(e api.Event, selected bool, w int) string {
 	// Meta line.
 	meta := []string{"vol " + fmtUSD(e.Volume)}
 	if !e.Binary() {
-		ld, _ := e.Leader()
-		if ld != "" {
+		if ld, _ := e.Leader(); ld != "" {
 			meta = append(meta, truncate(ld, 22))
 		}
 	}
-	meta = append(meta, humanizeUntil(e.EndsAt()), plural(len(e.Markets), "outcome"))
-	line2 := styleSubtle.Render(truncate(strings.Join(meta, " · "), inner))
+	meta = append(meta, "ends "+humanizeUntil(e.EndsAt()), plural(len(e.Markets), "outcome"))
+	line2 := metaLine(inner, meta...)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, line1, line2)
 	return joinH(marker, content)

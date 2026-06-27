@@ -140,6 +140,29 @@ func reflow(s string, width int) []string {
 	return lines
 }
 
+// metaLine joins metadata items with a faint "·" separator, dropping trailing
+// items that would overflow width. Items are measured as plain text and styled
+// afterwards, so truncation never splits an ANSI escape.
+func metaLine(width int, parts ...string) string {
+	const sep = " · "
+	sepW := runewidth.StringWidth(sep)
+	sepStyled := styleFaint.Render(sep)
+	var kept []string
+	used := 0
+	for i, p := range parts {
+		add := runewidth.StringWidth(p)
+		if i > 0 {
+			add += sepW
+		}
+		if width > 0 && used+add > width {
+			break
+		}
+		used += add
+		kept = append(kept, styleSubtle.Render(p))
+	}
+	return strings.Join(kept, sepStyled)
+}
+
 // joinH joins blocks horizontally with top alignment.
 func joinH(blocks ...string) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, blocks...)
