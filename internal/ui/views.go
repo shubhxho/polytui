@@ -82,14 +82,15 @@ func (m model) viewBrowse() string {
 	tabs := m.renderTabs(w)
 	status := m.browseStatus(w)
 
-	used := lipgloss.Height(header) + lipgloss.Height(tabs) + lipgloss.Height(status) + 1 // +1 spacer
+	// header + tabs + blank + list + blank + status
+	used := lipgloss.Height(header) + lipgloss.Height(tabs) + lipgloss.Height(status) + 2
 	listH := innerH - used
 	if listH < 3 {
 		listH = 3
 	}
 	list := m.browseList(w, listH)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header, tabs, list, "", status)
+	content := lipgloss.JoinVertical(lipgloss.Left, header, tabs, "", list, "", status)
 	return docStyle.Render(content)
 }
 

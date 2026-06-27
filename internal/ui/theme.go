@@ -5,11 +5,12 @@ import "github.com/charmbracelet/lipgloss"
 // Palette — the Lip Gloss signature: pink + purple accents on a dark ground,
 // with a green "special" for the up/positive side. Deliberately small.
 var (
-	pink   = lipgloss.Color("#FF5F87")
-	pinkHi = lipgloss.Color("#F25D94")
-	purple = lipgloss.Color("#7D56F4")
-	mauve  = lipgloss.Color("#AD58F6")
-	green  = lipgloss.Color("#73F59F")
+	pink    = lipgloss.Color("#FF5F87")
+	pinkHi  = lipgloss.Color("#F25D94")
+	purple  = lipgloss.Color("#7D56F4")
+	mauve   = lipgloss.Color("#AD58F6")
+	green   = lipgloss.Color("#73F59F")
+	neutral = lipgloss.Color("#C0BFD6") // ~even odds, soft cool grey
 
 	fg     = lipgloss.Color("#FAFAFA")
 	muted  = lipgloss.Color("#9A9A9A")
@@ -56,20 +57,33 @@ func probColor(p float64) lipgloss.Color {
 	case p <= 0.45:
 		return pink
 	default:
-		return lipgloss.Color("#D7D7D7")
+		return neutral
 	}
 }
 
-// sectionTitle renders a bold heading followed by a thin rule across width.
-func sectionTitle(label string, width int) string {
-	t := styleSectionTitle.Render(label)
-	tw := lipgloss.Width(t)
-	rule := width - tw - 1
-	if rule < 0 {
-		rule = 0
+// sectionHeader renders a (pre-styled) left label, a thin faint rule filling
+// the middle, and optional right-aligned content — the one heading style used
+// everywhere so sections read consistently.
+func sectionHeader(left, right string, width int) string {
+	lw := lipgloss.Width(left)
+	rw := lipgloss.Width(right)
+	if right == "" {
+		ruleW := width - lw - 1
+		if ruleW < 0 {
+			ruleW = 0
+		}
+		return left + " " + styleFaint.Render(repeat("─", ruleW))
 	}
-	line := t + " " + styleFaint.Render(repeat("─", rule))
-	return line
+	ruleW := width - lw - rw - 2
+	if ruleW < 1 {
+		return hbar(width, left, right)
+	}
+	return left + " " + styleFaint.Render(repeat("─", ruleW)) + " " + right
+}
+
+// sectionTitle is the simple label-only section heading.
+func sectionTitle(label string, width int) string {
+	return sectionHeader(styleSectionTitle.Render(label), "", width)
 }
 
 func repeat(s string, n int) string {

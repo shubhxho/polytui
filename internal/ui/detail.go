@@ -152,7 +152,7 @@ func (m model) chartAndBook(w, h int) string {
 	if change != "" {
 		priceLbl += "  " + change
 	}
-	chartHead := hbar(w, styleTitle.Render(priceLbl), m.rangeTabs())
+	chartHead := sectionHeader(styleTitle.Render(priceLbl), m.rangeTabs(), w)
 
 	chartH := h/2 - 2
 	if chartH < 4 {
@@ -185,7 +185,7 @@ func (m model) chartAndBook(w, h int) string {
 	if bookRows > 8 {
 		bookRows = 8
 	}
-	bookHead := hbar(w, styleTitle.Render("Order book"), spread)
+	bookHead := sectionHeader(styleTitle.Render("Order book"), spread, w)
 	bookBody := orderBookView(m.book, w, bookRows)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
