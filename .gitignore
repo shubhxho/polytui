@@ -1,0 +1,4 @@
+/polytui
+*.out
+*.test
+.DS_Store
