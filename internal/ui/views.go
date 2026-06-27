@@ -90,8 +90,23 @@ func (m model) viewBrowse() string {
 	}
 	list := m.browseList(w, listH)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header, tabs, "", list, "", status)
-	return docStyle.Render(content)
+	top := lipgloss.JoinVertical(lipgloss.Left, header, tabs, "", list)
+	return docStyle.Render(pinBottom(top, status, innerH))
+}
+
+// pinBottom stacks body and status into exactly h rows with the status bar
+// pinned to the bottom-most row. The gap between them is padded out, so the bar
+// never drifts up when the body is shorter than the screen (few markets, a short
+// detail panel, a resized window).
+func pinBottom(body, status string, h int) string {
+	topH := h - lipgloss.Height(status) - 1 // one blank spacer above the bar
+	if topH < 1 {
+		topH = 1
+	}
+	if bh := lipgloss.Height(body); bh < topH {
+		body += strings.Repeat("\n", topH-bh)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, body, "", status)
 }
 
 func (m model) browseTop(w int) string {

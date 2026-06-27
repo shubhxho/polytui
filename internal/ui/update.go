@@ -44,6 +44,19 @@ func (m model) onEvents(msg eventsMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// onImage stores a freshly-prepared thumbnail, assigning it a Kitty image id and
+// building its placeholder block once. Failures are swallowed — the detail view
+// simply renders without art.
+func (m model) onImage(msg imageMsg) (tea.Model, tea.Cmd) {
+	delete(m.imgLoading, msg.url)
+	if msg.err != nil || len(msg.png) == 0 {
+		return m, nil
+	}
+	m.imgSeq++
+	m.imgCache[msg.url] = buildKittyImage(m.imgSeq, msg.png, imgCols, imgRows)
+	return m, nil
+}
+
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Search input mode swallows most keys.
 	if m.searchMode {
@@ -341,7 +354,25 @@ func (m model) openDetail(e api.Event) (tea.Model, tea.Cmd) {
 		b.setTarget(mk.YesPrice())
 		m.detailBars[i] = b
 	}
-	return m, m.loadDetailData()
+	cmd := m.loadDetailData()
+	if img := m.imageCmd(&ev); img != nil {
+		cmd = tea.Batch(cmd, img)
+	}
+	return m, cmd
+}
+
+// imageCmd kicks off a thumbnail fetch for the event if the terminal supports
+// Kitty graphics and the image isn't already cached or in flight.
+func (m *model) imageCmd(e *api.Event) tea.Cmd {
+	if !m.imgOK {
+		return nil
+	}
+	url := eventImageURL(e)
+	if url == "" || m.imgCache[url] != nil || m.imgLoading[url] {
+		return nil
+	}
+	m.imgLoading[url] = true
+	return loadImage(url)
 }
 
 // loadDetailData fetches the order book + price history for the selected market.

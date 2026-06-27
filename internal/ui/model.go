@@ -80,6 +80,12 @@ type model struct {
 	// or data message, so a still screen costs 0fps instead of 60.
 	animRunning bool
 
+	// ---- kitty images ----
+	imgOK      bool                   // terminal speaks the Kitty graphics protocol
+	imgCache   map[string]*kittyImage // built thumbnails, keyed by source URL
+	imgLoading map[string]bool        // in-flight image fetches, keyed by URL
+	imgSeq     uint32                 // monotonic Kitty image-id counter
+
 	// ---- overlays ----
 	showHelp bool
 
@@ -123,6 +129,9 @@ func New() model {
 		loading:      true,
 		hasMore:      true,
 		animRunning:  true, // Init() starts the animTick chain
+		imgOK:        kittyEnabled(),
+		imgCache:     map[string]*kittyImage{},
+		imgLoading:   map[string]bool{},
 	}
 }
 
@@ -168,9 +177,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if arm := mm.maybeArm(); arm != nil {
 			cmd = tea.Batch(cmd, arm)
 		}
+		if pf := mm.imagePrefetch(); pf != nil {
+			cmd = tea.Batch(cmd, pf)
+		}
 		return mm, cmd
 	}
 	return nm, cmd
+}
+
+// imagePrefetch warms thumbnails ahead of the user: the focused browse event and
+// the next couple, so opening the detail screen finds the image already cached.
+// imageCmd dedupes against in-flight/cached urls, so this is cheap to call on
+// every interaction; the work is bounded by imageSem.
+func (m *model) imagePrefetch() tea.Cmd {
+	if !m.imgOK {
+		return nil
+	}
+	var cmds []tea.Cmd
+	switch m.screen {
+	case screenBrowse:
+		ev := m.filteredEvents()
+		for i := m.cursor; i < m.cursor+3 && i < len(ev); i++ {
+			if c := m.imageCmd(&ev[i]); c != nil {
+				cmds = append(cmds, c)
+			}
+		}
+	case screenDetail:
+		if c := m.imageCmd(m.detail); c != nil {
+			cmds = append(cmds, c)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // maybeArm restarts the 60fps frame loop if it isn't already running. Bubble
@@ -223,6 +263,9 @@ func (m model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.history = msg.points
 		}
 		return m, nil
+
+	case imageMsg:
+		return m.onImage(msg)
 	}
 	return m, nil
 }

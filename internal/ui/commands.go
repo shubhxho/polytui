@@ -30,6 +30,12 @@ type historyMsg struct {
 	err      error
 }
 
+type imageMsg struct {
+	url string
+	png []byte
+	err error
+}
+
 // frameMsg drives the animation loop.
 type frameMsg time.Time
 
@@ -70,6 +76,18 @@ func loadWatchEvents(c *api.Client, ids []string) tea.Cmd {
 		defer cancel()
 		events, err := c.EventsByIDs(ctx, ids)
 		return eventsMsg{events: events, watch: true, err: err}
+	}
+}
+
+// loadImage fetches and prepares an event thumbnail for the Kitty renderer.
+func loadImage(url string) tea.Cmd {
+	return func() tea.Msg {
+		imageSem <- struct{}{} // bound concurrent fetch+decode jobs
+		defer func() { <-imageSem }()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		png, err := fetchAndPreparePNG(ctx, url, imgMaxPixels)
+		return imageMsg{url: url, png: png, err: err}
 	}
 }
 

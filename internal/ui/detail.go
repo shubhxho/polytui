@@ -55,18 +55,28 @@ func (m model) viewDetail() string {
 	if desc != "" {
 		parts = append(parts, "", desc)
 	}
-	parts = append(parts, "", status)
-	return docStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+	top := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return docStyle.Render(pinBottom(top, status, innerH))
 }
 
 func (m model) detailHeader(w int) string {
 	e := m.detail
+
+	img := m.detailThumb()
+	textW := w - 2
+	if img != nil {
+		textW = w - img.cols - 3
+	}
+	if textW < 16 {
+		textW = 16
+	}
+
 	star := ""
 	if m.watch.has(e.ID) {
 		star = stylePink.Render(" ★")
 	}
-	title := styleTitle.Render(truncate(e.Title, w-2)) + star
-	meta := metaLine(w,
+	title := styleTitle.Render(truncate(e.Title, textW)) + star
+	meta := metaLine(textW,
 		"vol "+fmtUSD(e.Volume),
 		"24h "+fmtUSD(e.Volume24hr),
 		"liq "+fmtUSD(e.Liquidity),
@@ -74,7 +84,24 @@ func (m model) detailHeader(w int) string {
 		"ends "+humanizeUntil(e.EndsAt()),
 		plural(len(e.Markets), "outcome"),
 	)
-	return lipgloss.JoinVertical(lipgloss.Left, title, meta)
+	text := lipgloss.JoinVertical(lipgloss.Left, title, meta)
+	if img == nil {
+		return text
+	}
+	// Centre the title/meta vertically against the taller thumbnail.
+	if pad := (img.rows - lipgloss.Height(text)) / 2; pad > 0 {
+		text = strings.Repeat("\n", pad) + text
+	}
+	return joinH(img.block, "  ", text)
+}
+
+// detailThumb returns the cached Kitty thumbnail for the current event, or nil
+// when images are unsupported or not yet loaded.
+func (m model) detailThumb() *kittyImage {
+	if !m.imgOK || m.detail == nil {
+		return nil
+	}
+	return m.imgCache[eventImageURL(m.detail)]
 }
 
 // outcomesPanel lists the markets within the event with animated bars.

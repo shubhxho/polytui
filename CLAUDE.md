@@ -50,6 +50,19 @@ Polymarket public APIs.
     `GraphWidth()`) to the nearest `history` sample; `chartHover` composites a
     pink crosshair + date/price tooltip onto the *cached* chart string
     (`spliceCell`, ANSI-aware) without busting the data cache.
+  - Kitty images: `image.go` renders the event cover as a thumbnail in the
+    detail header on terminals that speak the Kitty graphics protocol (kitty,
+    Ghostty, WezTerm, Konsole; `kittyEnabled` sniffs env, `POLYTUI_IMAGES=on/off`
+    overrides). It uses **Unicode placeholders** so the image lives in the text
+    grid: the PNG is transmitted once as a *virtual placement* (`a=T,U=1`, `q=2`
+    to mute the reply) bound to an image id, then a `imgCols×imgRows` grid of
+    `U+10EEEE` cells references it — image id in each cell's 24-bit foreground,
+    row/col via combining diacritics (`rowColumnDiacritics`). The heavy transmit
+    blob is measured as zero width and rides on row 0, so Bubble Tea's line-diff
+    renderer ships it once. `openDetail` fires `loadImage` (fetch → bilinear
+    downscale to `imgMaxPixels` → re-encode PNG, off the UI goroutine); the built
+    `kittyImage` is cached by URL in `model.imgCache`. Non-Kitty terminals fall
+    back to the plain text header — nothing is fetched.
   - Perf: the detail screen renders every frame, so the chart, order book, and
     tab bar are memoised in `detailCache` (`model.renderCache`, a pointer so the
     value-receiver `View` can fill it). Each frame is an O(1) signature compare
