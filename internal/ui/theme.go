@@ -20,7 +20,6 @@ var (
 )
 
 var (
-	styleBase   = lipgloss.NewStyle().Foreground(fg)
 	styleTitle  = lipgloss.NewStyle().Foreground(fg).Bold(true)
 	styleMuted  = lipgloss.NewStyle().Foreground(muted)
 	styleSubtle = lipgloss.NewStyle().Foreground(subtle)

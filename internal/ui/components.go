@@ -117,35 +117,7 @@ func partialBlock(frac float64) string {
 
 // ---- Sparkline price chart ----------------------------------------------
 
-var brailleRamp = []rune("⣀⣄⣤⣦⣶⣷⣿")
 var blockRamp = []rune(" ▁▂▃▄▅▆▇█")
-
-// sparkline renders a compact single-line chart of the series.
-func sparkline(points []float64, width int) string {
-	if len(points) == 0 || width <= 0 {
-		return strings.Repeat(" ", max(width, 0))
-	}
-	sampled := resample(points, width)
-	mn, mx := minMax(sampled)
-	rng := mx - mn
-	var sb strings.Builder
-	for _, v := range sampled {
-		var idx int
-		if rng == 0 {
-			idx = len(blockRamp) / 2
-		} else {
-			idx = int(((v - mn) / rng) * float64(len(blockRamp)-1))
-		}
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= len(blockRamp) {
-			idx = len(blockRamp) - 1
-		}
-		sb.WriteRune(blockRamp[idx])
-	}
-	return sb.String()
-}
 
 // chartBlock renders a multi-row line chart (height rows tall) with a Y axis.
 func chartBlock(points []float64, width, height int) string {
