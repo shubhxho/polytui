@@ -40,7 +40,7 @@ func statusBar(width int, key, mid string, nuggets ...string) string {
 
 func (m model) viewSplash() string {
 	reveal := clamp01(m.splashPos)
-	mark := wordmark()
+	mark := wordmarkLarge()
 	barMax := 24
 	bw := int(reveal * float64(barMax))
 	rule := stylePink.Render(strings.Repeat("─", bw)) + styleFaint.Render(strings.Repeat("─", barMax-bw))
