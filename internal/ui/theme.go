@@ -6,9 +6,7 @@ import "github.com/charmbracelet/lipgloss"
 // with a green "special" for the up/positive side. Deliberately small.
 var (
 	pink    = lipgloss.Color("#FF5F87")
-	pinkHi  = lipgloss.Color("#F25D94")
 	purple  = lipgloss.Color("#7D56F4")
-	mauve   = lipgloss.Color("#AD58F6")
 	green   = lipgloss.Color("#73F59F")
 	neutral = lipgloss.Color("#C0BFD6") // ~even odds, soft cool grey
 
