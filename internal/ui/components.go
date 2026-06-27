@@ -193,11 +193,11 @@ func chartBlock(points []float64, width, height int) string {
 		var label string
 		switch r {
 		case 0:
-			label = fmtCents(mx)
+			label = fmtPct(mx)
 		case height - 1:
-			label = fmtCents(mn)
+			label = fmtPct(mn)
 		case height / 2:
-			label = fmtCents((mn + mx) / 2)
+			label = fmtPct((mn + mx) / 2)
 		default:
 			label = ""
 		}

@@ -113,7 +113,7 @@ func (m model) outcomesPanel(w, h int) string {
 			marker = stylePink.Render("▌ ")
 			nameStyle = styleTitle
 		}
-		pct := lipgloss.NewStyle().Foreground(probColor(p)).Bold(true).Render(fmtCents(p))
+		pct := lipgloss.NewStyle().Foreground(probColor(p)).Bold(true).Render(fmtPct(p))
 		line1 := marker + hbar(w-2, nameStyle.Render(truncate(mk.Title(), w-10)), pct)
 		line2 := "  " + bar.renderPlain(w-4, probColor(p))
 		rows = append(rows, line1, line2)
@@ -147,8 +147,8 @@ func (m model) chartAndBook(w, h int) string {
 		change = cstyle.Render(fmt.Sprintf("%s %.1f pts", arrow, delta*100))
 	}
 
-	priceLbl := "Price  " +
-		lipgloss.NewStyle().Foreground(probColor(cur)).Bold(true).Render(fmtCents(cur))
+	priceLbl := "Chance  " +
+		lipgloss.NewStyle().Foreground(probColor(cur)).Bold(true).Render(fmtPct(cur))
 	if change != "" {
 		priceLbl += "  " + change
 	}
