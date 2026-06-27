@@ -146,7 +146,8 @@ func (m model) browseList(w, h int) string {
 	for i := scroll; i < end; i++ {
 		rows = append(rows, m.eventRow(events[i], i == m.cursor, w))
 	}
-	body := strings.Join(rows, "\n")
+	// Blank line between rows for breathing room (each row block is 3 tall).
+	body := strings.Join(rows, "\n\n")
 	if bh := lipgloss.Height(body); bh < h {
 		body += strings.Repeat("\n", h-bh)
 	}
@@ -154,12 +155,14 @@ func (m model) browseList(w, h int) string {
 }
 
 func (m model) eventRow(e api.Event, selected bool, w int) string {
-	marker := "   "
+	mk := "   "
 	titleStyle := styleMuted
 	if selected {
-		marker = stylePink.Render(" ▌ ")
+		mk = stylePink.Render(" ▌ ")
 		titleStyle = styleTitle
 	}
+	// Two-line marker column so the selection bar spans the whole row.
+	marker := lipgloss.JoinVertical(lipgloss.Left, mk, mk)
 	inner := w - 3
 	if inner < 16 {
 		inner = 16
