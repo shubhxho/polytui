@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"sort"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -209,6 +210,7 @@ func (m model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detail = nil
 		m.book = nil
 		m.history = nil
+		m.hoverChart = false
 		return m, nil
 	case "j", "down":
 		if m.detail != nil && m.detailCursor < len(m.detail.Markets)-1 {
@@ -242,9 +244,13 @@ func (m model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleMouse maps wheel events to navigation in the active screen.
+// handleMouse maps wheel events to navigation and motion to the chart crosshair.
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp || m.searchMode || m.screen == screenSplash {
+		return m, nil
+	}
+	if m.screen == screenDetail && msg.Action == tea.MouseActionMotion {
+		m.updateChartHover(msg)
 		return m, nil
 	}
 	var up bool
@@ -266,6 +272,58 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m.handleBrowseKey(key)
 }
 
+// updateChartHover sets the crosshair from a mouse-motion event, clearing it
+// when the pointer is outside the price chart. Maps the hovered column to the
+// nearest history sample using the chart's plot origin and graph width.
+func (m *model) updateChartHover(msg tea.MouseMsg) {
+	m.hoverChart = false
+	if m.zone == nil || m.renderCache == nil || len(m.history) == 0 || m.renderCache.tsW == 0 {
+		return
+	}
+	z := m.zone.Get(zoneChart)
+	if z == nil || !z.InBounds(msg) {
+		return
+	}
+	relX, _ := z.Pos(msg) // column within the chart body (canvas col 0 = left)
+
+	ts := &m.renderCache.ts
+	ox := ts.Origin().X   // Y-axis label width / plot origin column
+	gw := ts.GraphWidth() // plot width in columns
+	if gw <= 0 {
+		return
+	}
+	plotX := relX - ox
+	if plotX < 0 {
+		plotX = 0
+	}
+	frac := float64(plotX) / float64(gw)
+	if frac > 1 {
+		frac = 1
+	}
+
+	t0 := m.history[0].T
+	t1 := m.history[len(m.history)-1].T
+	target := float64(t0) + frac*float64(t1-t0)
+	idx, best := 0, math.MaxFloat64
+	for i, p := range m.history {
+		if d := math.Abs(float64(p.T) - target); d < best {
+			best, idx = d, i
+		}
+	}
+
+	// Snap the crosshair to the chosen sample's actual draw column.
+	col := ox
+	if t1 > t0 {
+		col = ox + int(math.Round(float64(m.history[idx].T-t0)/float64(t1-t0)*float64(gw)))
+	}
+	if maxCol := m.renderCache.tsW - 1; col > maxCol {
+		col = maxCol
+	}
+	m.hoverIdx = idx
+	m.hoverCol = col
+	m.hoverChart = true
+}
+
 // openDetail switches to the detail screen for an event.
 func (m model) openDetail(e api.Event) (tea.Model, tea.Cmd) {
 	ev := e
@@ -273,6 +331,7 @@ func (m model) openDetail(e api.Event) (tea.Model, tea.Cmd) {
 	m.screen = screenDetail
 	m.detailCursor = 0
 	m.descExpanded = false
+	m.hoverChart = false
 	m.book = nil
 	m.history = nil
 	// fresh animated bars per market, revealing from zero

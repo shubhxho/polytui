@@ -132,14 +132,10 @@ func (m model) chartAndBook(w, h int) string {
 	}
 	mk := e.Markets[m.detailCursor]
 
-	pts := make([]float64, len(m.history))
-	for i, p := range m.history {
-		pts[i] = p.P
-	}
 	cur := mk.YesPrice()
 	change := ""
-	if len(pts) > 1 {
-		delta := pts[len(pts)-1] - pts[0]
+	if len(m.history) > 1 {
+		delta := m.history[len(m.history)-1].P - m.history[0].P
 		arrow, cstyle := "▲", styleGreen
 		if delta < 0 {
 			arrow, cstyle = "▼", stylePink
@@ -148,9 +144,22 @@ func (m model) chartAndBook(w, h int) string {
 	}
 
 	priceLbl := "Chance  " +
-		lipgloss.NewStyle().Foreground(probColor(cur)).Bold(true).Render(fmtPct(cur))
+		styleProbBold.Foreground(probColor(cur)).Render(fmtPct(cur))
 	if change != "" {
 		priceLbl += "  " + change
+	}
+	if len(m.history) > 1 {
+		lo, hi := m.history[0].P, m.history[0].P
+		for _, p := range m.history {
+			if p.P < lo {
+				lo = p.P
+			}
+			if p.P > hi {
+				hi = p.P
+			}
+		}
+		priceLbl += styleSubtle.Render("   lo ") + styleMuted.Render(fmtPct(lo)) +
+			styleSubtle.Render(" hi ") + styleMuted.Render(fmtPct(hi))
 	}
 	chartHead := sectionHeader(styleTitle.Render(priceLbl), m.rangeTabs(), w)
 
@@ -159,7 +168,7 @@ func (m model) chartAndBook(w, h int) string {
 		chartH = 4
 	}
 	var chartBody string
-	if len(pts) == 0 {
+	if len(m.history) == 0 {
 		spin := m.spinner()
 		if m.histToken == "" {
 			spin = "—"
@@ -167,7 +176,13 @@ func (m model) chartAndBook(w, h int) string {
 		chartBody = lipgloss.Place(w, chartH, lipgloss.Center, lipgloss.Center,
 			styleSubtle.Render(spin+" loading history…"))
 	} else {
-		chartBody = chartBlock(pts, w, chartH)
+		chartBody = m.renderCache.chart(m.history, w, chartH)
+		if m.hoverChart {
+			chartBody = chartHover(chartBody, w, m.hoverCol, m.hoverIdx, m.history)
+		}
+	}
+	if m.zone != nil {
+		chartBody = m.zone.Mark(zoneChart, chartBody)
 	}
 
 	spread := ""
@@ -175,7 +190,10 @@ func (m model) chartAndBook(w, h int) string {
 		bb := topLevels(m.book.Bids, true, 1)
 		ba := topLevels(m.book.Asks, false, 1)
 		if len(bb) > 0 && len(ba) > 0 {
-			spread = styleSubtle.Render(fmt.Sprintf("spread %.0f¢", (ba[0].PriceF()-bb[0].PriceF())*100))
+			bid, ask := bb[0].PriceF(), ba[0].PriceF()
+			spread = styleGreen.Render(fmtCents(bid)) +
+				styleSubtle.Render(" / ") + stylePink.Render(fmtCents(ask)) +
+				styleSubtle.Render(fmt.Sprintf("  ·  %.0f¢ spread", (ask-bid)*100))
 		}
 	}
 	bookRows := h - chartH - 6
@@ -186,7 +204,7 @@ func (m model) chartAndBook(w, h int) string {
 		bookRows = 8
 	}
 	bookHead := sectionHeader(styleTitle.Render("Order book"), spread, w)
-	bookBody := orderBookView(m.book, w, bookRows)
+	bookBody := m.renderCache.book(m.book, w, bookRows)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		chartHead, chartBody, "",
@@ -195,7 +213,6 @@ func (m model) chartAndBook(w, h int) string {
 }
 
 func (m model) rangeTabs() string {
-	activePill := lipgloss.NewStyle().Foreground(fg).Background(purple).Padding(0, 1)
 	var parts []string
 	for i, hi := range historyIntervals {
 		if i == m.histIdx {

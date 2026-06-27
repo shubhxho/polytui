@@ -79,7 +79,7 @@ func (m model) viewBrowse() string {
 	}
 
 	header := m.browseTop(w)
-	tabs := m.renderTabs(w)
+	tabs := m.renderCache.tabs(m, w)
 	status := m.browseStatus(w)
 
 	// header + tabs + blank + list + blank + status
@@ -184,7 +184,7 @@ func (m model) eventRow(e api.Event, selected bool, w int) string {
 
 	// Right cluster: animated bar + percentage + star.
 	barW := 14
-	pct := lipgloss.NewStyle().Foreground(probColor(p)).Bold(true).Render(padLeft(fmtPct(p), 4))
+	pct := styleProbBold.Foreground(probColor(p)).Render(padLeft(fmtPct(p), 4))
 	rightCluster := bar.renderPlain(barW, probColor(p)) + " " + pct + " " + star
 	titleW := inner - lipgloss.Width(rightCluster) - 1
 	if titleW < 8 {

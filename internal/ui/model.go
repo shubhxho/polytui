@@ -4,6 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/harmonica"
+	zone "github.com/lrstanley/bubblezone"
 	"shubhxho/polytui/internal/api"
 )
 
@@ -62,6 +63,23 @@ type model struct {
 	histIdx      int // index into historyIntervals
 	descExpanded bool
 
+	// renderCache memoises the chart + order book + tab bar so the 60fps frame
+	// loop doesn't redraw them every tick (held behind a pointer so View can fill it).
+	renderCache *detailCache
+
+	// zone hit-tests on-screen regions (the price chart) for mouse hover.
+	zone *zone.Manager
+
+	// chart hover crosshair state, set on mouse motion over the price chart.
+	hoverChart bool // pointer currently over the chart
+	hoverIdx   int  // nearest history index under the pointer
+	hoverCol   int  // chart-local column to draw the crosshair at
+
+	// animRunning is true while a 60fps animTick chain is live. The loop idles
+	// itself when every spring has settled and re-arms on the next interaction
+	// or data message, so a still screen costs 0fps instead of 60.
+	animRunning bool
+
 	// ---- overlays ----
 	showHelp bool
 
@@ -99,9 +117,12 @@ func New() model {
 		knownBars:    map[string]bool{},
 		watch:        loadWatchlist(),
 		watchEvents:  map[string]api.Event{},
+		renderCache:  newDetailCache(),
+		zone:         zone.New(),
 		histIdx:      2, // default 1W
 		loading:      true,
 		hasMore:      true,
+		animRunning:  true, // Init() starts the animTick chain
 	}
 }
 
@@ -135,16 +156,41 @@ func (m model) query(offset int) api.EventQuery {
 
 func (m *model) currentSort() sortOption { return sortOptions[m.sortIdx] }
 
-// Update is the central dispatcher.
+// Update is the central dispatcher. frameMsg drives the animation loop; every
+// other message is routed and then allowed to re-arm that loop, so motion that
+// began while the loop was idle (new data, a keypress) gets animated.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(frameMsg); ok {
+		return m.tickAnim()
+	}
+	nm, cmd := m.route(msg)
+	if mm, ok := nm.(model); ok {
+		if arm := mm.maybeArm(); arm != nil {
+			cmd = tea.Batch(cmd, arm)
+		}
+		return mm, cmd
+	}
+	return nm, cmd
+}
+
+// maybeArm restarts the 60fps frame loop if it isn't already running. Bubble
+// Tea serializes Update on one goroutine, so animRunning has no race and only
+// tickAnim ever clears it — there can never be two concurrent tick chains.
+func (m *model) maybeArm() tea.Cmd {
+	if m.animRunning {
+		return nil
+	}
+	m.animRunning = true
+	return animTick()
+}
+
+// route dispatches a non-frame message to the right handler.
+func (m model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
-
-	case frameMsg:
-		return m.tickAnim()
 
 	case refreshMsg:
 		var cmds []tea.Cmd
@@ -189,11 +235,13 @@ func (m model) View() string {
 	case screenSplash:
 		return m.viewSplash()
 	case screenDetail:
-		base := m.viewDetail()
-		return m.withOverlays(base)
+		s := m.withOverlays(m.viewDetail())
+		if m.zone != nil {
+			s = m.zone.Scan(s) // records the chart zone bounds + strips the markers
+		}
+		return s
 	default:
-		base := m.viewBrowse()
-		return m.withOverlays(base)
+		return m.withOverlays(m.viewBrowse())
 	}
 }
 
@@ -204,27 +252,49 @@ func (m model) withOverlays(base string) string {
 	return base
 }
 
-// tickAnim advances every active spring/animation one frame.
+// tickAnim advances every active spring/animation one frame, then stops the
+// 60fps chain once nothing is moving (re-armed by maybeArm on the next message).
 func (m model) tickAnim() (tea.Model, tea.Cmd) {
 	m.frameNo++
 	if m.frameNo%6 == 0 {
 		m.spinFrame++
 	}
 
+	// moving stays true while anything needs further frames: a spring in
+	// flight, the splash reveal, or a spinner with a request still in flight.
+	moving := m.loading || m.loadingMore
+
 	if m.screen == screenSplash {
 		m.splashPos, m.splashVel = m.splashSpring.Update(m.splashPos, m.splashVel, 1.0)
 		if m.splashPos > 0.985 && !m.loading {
 			m.screen = screenBrowse
+		} else {
+			moving = true
+		}
+	}
+	// Keep the detail "loading history/book…" spinner alive during slow loads.
+	if m.screen == screenDetail {
+		if (m.histToken != "" && len(m.history) == 0) || (m.bookToken != "" && m.book == nil) {
+			moving = true
 		}
 	}
 
 	// Browse bars.
 	for _, b := range m.bars {
-		b.update()
+		if b.update() {
+			moving = true
+		}
 	}
 	// Detail bars.
 	for i := range m.detailBars {
-		m.detailBars[i].update()
+		if m.detailBars[i].update() {
+			moving = true
+		}
+	}
+
+	if !moving {
+		m.animRunning = false
+		return m, nil // idle: stop ticking until the next interaction/data
 	}
 	return m, animTick()
 }

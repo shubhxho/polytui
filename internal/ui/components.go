@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"math"
 	"strings"
 
@@ -48,6 +49,137 @@ func (b *springBar) update() bool {
 	return moving
 }
 
+// Hoisted bar styles — reused every frame instead of allocating a fresh
+// lipgloss.NewStyle() per call. .Foreground(col) returns a cheap value copy.
+var (
+	barFillBase = lipgloss.NewStyle()
+	// barTrack is the unfilled rail: the *same* █ glyph as the fill but in a
+	// dim cool grey, so filled and empty share one seamless bar and only the
+	// colour changes (no ░ texture clash).
+	barTrack     = lipgloss.Color("#2C2C38")
+	barTrackBase = lipgloss.NewStyle().Foreground(barTrack)
+)
+
+// renderBarRun draws a width-cell bar as a single continuous rail: a dim track
+// behind, a vivid fill in front, joined by one sub-cell glyph at the crest so
+// the spring animation reads smoothly. The fill keeps its accent hue all the way
+// and only lifts toward white at the leading edge — a glossy highlight rather
+// than a wash. The gradient is quantised into at most gradientSegs colour bands,
+// so the whole bar is a bounded handful of lipgloss.Render calls regardless of
+// width — cheap at 60fps across many bars.
+func renderBarRun(width int, pos float64, col lipgloss.Color) string {
+	if width < 1 {
+		width = 1
+	}
+	filledF := pos * float64(width)
+	full := int(filledF)
+	if full > width {
+		full = width
+	}
+	frac := filledF - float64(full)
+	rest := width - full
+
+	var sb strings.Builder
+	if full > 0 {
+		sb.WriteString(gradientFill(full, col))
+	}
+	// The crest cell is painted over the track background so the partial glyph's
+	// empty side keeps the rail colour instead of punching a hole to the ground.
+	if full < width && frac >= 0.12 {
+		sb.WriteString(barFillBase.Foreground(barBright(col)).Background(barTrack).Render(partialBlock(frac)))
+		rest--
+	}
+	if rest > 0 {
+		sb.WriteString(barTrackBase.Render(strings.Repeat("█", rest)))
+	}
+	return sb.String()
+}
+
+// gradientSegs caps how many colour bands the fill is split into; each band is
+// one Render call, so the whole gradient is at most this many regardless of bar
+// width.
+const gradientSegs = 8
+
+// gradientFill renders n solid cells shaded from the full accent at the tail to
+// a white-lifted crest at the leading edge — a subtle gloss, never grey.
+func gradientFill(n int, col lipgloss.Color) string {
+	if n <= 0 {
+		return ""
+	}
+	base := rgbOf(col)
+	crest := lerpRGB(base, rgbWhite, 0.30)
+	segs := gradientSegs
+	if segs > n {
+		segs = n
+	}
+	var sb strings.Builder
+	for s := 0; s < segs; s++ {
+		cnt := n*(s+1)/segs - n*s/segs
+		if cnt == 0 {
+			continue
+		}
+		t := 0.0
+		if segs > 1 {
+			t = float64(s) / float64(segs-1)
+		}
+		sb.WriteString(barFillBase.Foreground(lerpHex(base, crest, t)).Render(strings.Repeat("█", cnt)))
+	}
+	return sb.String()
+}
+
+// barBright is the crest colour — the accent lifted toward white for the gloss
+// highlight at the leading edge.
+func barBright(col lipgloss.Color) lipgloss.Color {
+	return packHex(lerpRGB(rgbOf(col), rgbWhite, 0.30))
+}
+
+var rgbWhite = [3]float64{0xff, 0xff, 0xff}
+
+// ---- small RGB lerp helpers (hex #RRGGBB only) ---------------------------
+
+func rgbOf(c lipgloss.Color) [3]float64 {
+	s := string(c)
+	if len(s) != 7 || s[0] != '#' {
+		return [3]float64{}
+	}
+	return [3]float64{float64(hexByte(s[1], s[2])), float64(hexByte(s[3], s[4])), float64(hexByte(s[5], s[6]))}
+}
+
+func hexByte(hi, lo byte) int { return hexNib(hi)<<4 | hexNib(lo) }
+
+func hexNib(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	}
+	return 0
+}
+
+func lerpRGB(a, b [3]float64, t float64) [3]float64 {
+	return [3]float64{a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t, a[2] + (b[2]-a[2])*t}
+}
+
+func lerpHex(a, b [3]float64, t float64) lipgloss.Color { return packHex(lerpRGB(a, b, t)) }
+
+func packHex(c [3]float64) lipgloss.Color {
+	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", clampByte(c[0]), clampByte(c[1]), clampByte(c[2])))
+}
+
+func clampByte(v float64) int {
+	i := int(v + 0.5)
+	if i < 0 {
+		return 0
+	}
+	if i > 255 {
+		return 255
+	}
+	return i
+}
+
 // render draws the bar at the given width using the animated position, while
 // the numeric label reflects the true target value.
 func (b springBar) render(width int, label string, col lipgloss.Color) string {
@@ -58,48 +190,13 @@ func (b springBar) render(width int, label string, col lipgloss.Color) string {
 	if barW < 3 {
 		barW = 3
 	}
-	filledF := b.pos * float64(barW)
-	full := int(filledF)
-	frac := filledF - float64(full)
-	var sb strings.Builder
-	fillStyle := lipgloss.NewStyle().Foreground(col)
-	emptyStyle := lipgloss.NewStyle().Foreground(faint)
-	for i := 0; i < barW; i++ {
-		switch {
-		case i < full:
-			sb.WriteString(fillStyle.Render("█"))
-		case i == full && frac >= 0.15:
-			sb.WriteString(fillStyle.Render(partialBlock(frac)))
-		default:
-			sb.WriteString(emptyStyle.Render("░"))
-		}
-	}
-	lab := lipgloss.NewStyle().Foreground(col).Bold(true).Render(label)
-	return sb.String() + " " + lab
+	lab := barFillBase.Foreground(col).Bold(true).Render(label)
+	return renderBarRun(barW, b.pos, col) + " " + lab
 }
 
 // renderPlain draws just the animated bar (no label) at the given width.
 func (b springBar) renderPlain(width int, col lipgloss.Color) string {
-	if width < 1 {
-		width = 1
-	}
-	filledF := b.pos * float64(width)
-	full := int(filledF)
-	frac := filledF - float64(full)
-	var sb strings.Builder
-	fillStyle := lipgloss.NewStyle().Foreground(col)
-	emptyStyle := lipgloss.NewStyle().Foreground(faint)
-	for i := 0; i < width; i++ {
-		switch {
-		case i < full:
-			sb.WriteString(fillStyle.Render("█"))
-		case i == full && frac >= 0.15:
-			sb.WriteString(fillStyle.Render(partialBlock(frac)))
-		default:
-			sb.WriteString(emptyStyle.Render("░"))
-		}
-	}
-	return sb.String()
+	return renderBarRun(width, b.pos, col)
 }
 
 var partialBlocks = []string{" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉"}
@@ -115,120 +212,21 @@ func partialBlock(frac float64) string {
 	return partialBlocks[idx]
 }
 
-// ---- Sparkline price chart ----------------------------------------------
-
-var blockRamp = []rune(" ▁▂▃▄▅▆▇█")
-
-// chartBlock renders a multi-row line chart (height rows tall) with a Y axis.
-func chartBlock(points []float64, width, height int) string {
-	if height < 2 {
-		height = 2
-	}
-	if width < 4 {
-		width = 4
-	}
-	axisW := 5
-	plotW := width - axisW
-	if plotW < 2 {
-		plotW = 2
-	}
-	if len(points) == 0 {
-		empty := lipgloss.NewStyle().Foreground(faint)
-		rows := make([]string, height)
-		for i := range rows {
-			rows[i] = empty.Render(strings.Repeat(" ", axisW) + strings.Repeat("·", plotW))
-		}
-		return strings.Join(rows, "\n")
-	}
-	sampled := resample(points, plotW)
-	mn, mx := minMax(sampled)
-	if mn == mx {
-		mn -= 0.01
-		mx += 0.01
-	}
-	rng := mx - mn
-
-	// Map each column to a fractional row position.
-	grid := make([][]rune, height)
-	for r := range grid {
-		grid[r] = []rune(strings.Repeat(" ", plotW))
-	}
-	colorGrid := make([][]bool, height)
-	for r := range colorGrid {
-		colorGrid[r] = make([]bool, plotW)
-	}
-	rising := sampled[len(sampled)-1] >= sampled[0]
-	for x, v := range sampled {
-		frac := (v - mn) / rng
-		// row 0 is top (max), height-1 bottom (min)
-		level := frac * float64((height-1)*len(blockRamp[1:]))
-		row := height - 1 - int(level)/(len(blockRamp)-1)
-		sub := int(level) % (len(blockRamp) - 1)
-		if row < 0 {
-			row = 0
-		}
-		if row >= height {
-			row = height - 1
-		}
-		ch := blockRamp[sub+1]
-		grid[row][x] = ch
-		colorGrid[row][x] = true
-		// fill below with solid blocks for an area-chart feel
-		for rr := row + 1; rr < height; rr++ {
-			grid[rr][x] = '█'
-			colorGrid[rr][x] = true
-		}
-	}
-
-	lineCol := green
-	if !rising {
-		lineCol = pink
-	}
-	fillStyle := lipgloss.NewStyle().Foreground(lineCol)
-	axisStyle := lipgloss.NewStyle().Foreground(faint)
-
-	var sb strings.Builder
-	for r := 0; r < height; r++ {
-		// Y axis label at top, mid, bottom
-		var label string
-		switch r {
-		case 0:
-			label = fmtPct(mx)
-		case height - 1:
-			label = fmtPct(mn)
-		case height / 2:
-			label = fmtPct((mn + mx) / 2)
-		default:
-			label = ""
-		}
-		sb.WriteString(axisStyle.Render(padLeft(label, axisW-1) + "│"))
-		// row content
-		var rowStr strings.Builder
-		for x := 0; x < plotW; x++ {
-			if colorGrid[r][x] {
-				rowStr.WriteString(fillStyle.Render(string(grid[r][x])))
-			} else {
-				rowStr.WriteString(" ")
-			}
-		}
-		sb.WriteString(rowStr.String())
-		if r < height-1 {
-			sb.WriteByte('\n')
-		}
-	}
-	return sb.String()
-}
-
 // ---- Order book depth ----------------------------------------------------
 
-// orderBookView renders bids (left/green) and asks (right/red) with depth bars.
+// orderBookView renders bids (left/green) and asks (right/pink) as a depth
+// ladder mirrored around a faint center divider — bars grow toward the spread,
+// so the touch sits in the middle and sizes read outward.
 func orderBookView(book *api.OrderBook, width, rows int) string {
 	if book == nil {
-		return styleMuted.Render("loading order book…")
+		return styleSubtle.Render("  loading order book…")
 	}
 	// Bids come ascending by price; take the highest. Asks ascending; take lowest.
 	bids := topLevels(book.Bids, true, rows)
 	asks := topLevels(book.Asks, false, rows)
+	if len(bids) == 0 && len(asks) == 0 {
+		return styleSubtle.Render("  no resting orders")
+	}
 
 	maxSize := 0.0
 	for _, l := range append(append([]api.OrderLevel{}, bids...), asks...) {
@@ -240,47 +238,54 @@ func orderBookView(book *api.OrderBook, width, rows int) string {
 		maxSize = 1
 	}
 
-	colW := (width - 3) / 2
-	if colW < 10 {
-		colW = 10
+	side := (width - 1) / 2 // columns each side of the divider
+	if side < 12 {
+		side = 12
 	}
-	barW := colW - 12
+	barW := side - 6 - 1 - 3 - 1 // size(6) sp price(3) sp bar
 	if barW < 3 {
 		barW = 3
 	}
 
 	greenBar := lipgloss.NewStyle().Foreground(green)
 	redBar := lipgloss.NewStyle().Foreground(pink)
-	gap := "   "
+	div := styleFaint.Render("│")
+
+	// Only draw rows that carry a level — avoids a divider dangling into empty space.
+	n := len(bids)
+	if len(asks) > n {
+		n = len(asks)
+	}
+	if n > rows {
+		n = rows
+	}
 
 	var sb strings.Builder
-	header := joinH(
-		padRight(styleMuted.Render("  bid size  price"), colW),
-		gap,
-		styleMuted.Render("price  ask size"),
-	)
-	sb.WriteString(header + "\n")
+	sb.WriteString(joinH(
+		padRight(styleSubtle.Render("  bids"), side),
+		" ",
+		styleSubtle.Render("asks"),
+	) + "\n")
 
-	n := rows
 	for i := 0; i < n; i++ {
 		var left, right string
 		if i < len(bids) {
 			b := bids[i]
-			w := int(b.SizeF() / maxSize * float64(barW))
-			bar := greenBar.Render(strings.Repeat("▰", w) + strings.Repeat(" ", barW-w))
-			left = padLeft(fmtNum(b.SizeF()), 8) + " " + styleGreen.Render(fmtCents(b.PriceF())) + " " + bar
+			n := int(b.SizeF() / maxSize * float64(barW))
+			bar := greenBar.Render(strings.Repeat(" ", barW-n) + strings.Repeat("▰", n))
+			left = padLeft(fmtNum(b.SizeF()), 6) + " " +
+				styleGreen.Render(padLeft(fmtCents(b.PriceF()), 3)) + " " + bar
 		} else {
-			left = strings.Repeat(" ", colW)
+			left = strings.Repeat(" ", side)
 		}
 		if i < len(asks) {
 			a := asks[i]
-			w := int(a.SizeF() / maxSize * float64(barW))
-			bar := redBar.Render(strings.Repeat(" ", barW-w) + strings.Repeat("▰", w))
-			right = bar + " " + stylePink.Render(fmtCents(a.PriceF())) + " " + padRight(fmtNum(a.SizeF()), 8)
-		} else {
-			right = ""
+			n := int(a.SizeF() / maxSize * float64(barW))
+			bar := redBar.Render(strings.Repeat("▰", n) + strings.Repeat(" ", barW-n))
+			right = bar + " " +
+				stylePink.Render(padRight(fmtCents(a.PriceF()), 3)) + " " + fmtNum(a.SizeF())
 		}
-		sb.WriteString(joinH(padRight(left, colW), gap, right))
+		sb.WriteString(padRight(left, side) + div + right)
 		if i < n-1 {
 			sb.WriteByte('\n')
 		}
@@ -320,54 +325,4 @@ func clamp01(v float64) float64 {
 		return 1
 	}
 	return v
-}
-
-func resample(points []float64, width int) []float64 {
-	if len(points) <= width {
-		// stretch by nearest-neighbour so short series fill the width
-		out := make([]float64, width)
-		for i := range out {
-			src := int(float64(i) / float64(width) * float64(len(points)))
-			if src >= len(points) {
-				src = len(points) - 1
-			}
-			out[i] = points[src]
-		}
-		return out
-	}
-	// downsample by bucket averaging
-	out := make([]float64, width)
-	bucket := float64(len(points)) / float64(width)
-	for i := 0; i < width; i++ {
-		start := int(float64(i) * bucket)
-		end := int(float64(i+1) * bucket)
-		if end > len(points) {
-			end = len(points)
-		}
-		if end <= start {
-			end = start + 1
-		}
-		sum := 0.0
-		for j := start; j < end && j < len(points); j++ {
-			sum += points[j]
-		}
-		out[i] = sum / float64(end-start)
-	}
-	return out
-}
-
-func minMax(s []float64) (float64, float64) {
-	if len(s) == 0 {
-		return 0, 0
-	}
-	mn, mx := s[0], s[0]
-	for _, v := range s {
-		if v < mn {
-			mn = v
-		}
-		if v > mx {
-			mx = v
-		}
-	}
-	return mn, mx
 }

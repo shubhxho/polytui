@@ -28,6 +28,14 @@ var (
 	stylePurp  = lipgloss.NewStyle().Foreground(purple)
 	styleGreen = lipgloss.NewStyle().Foreground(green)
 
+	// Hoisted out of hot render loops — .Foreground/.Bold below are cheap value
+	// copies, whereas a fresh lipgloss.NewStyle() per row per frame allocates.
+	styleProbBold = lipgloss.NewStyle().Bold(true)
+	activePill    = lipgloss.NewStyle().Foreground(fg).Background(purple).Padding(0, 1)
+
+	// Crosshair tooltip pill shown when hovering the price chart with the mouse.
+	styleCrosshairTip = lipgloss.NewStyle().Foreground(fg).Background(purple).Bold(true).Padding(0, 1)
+
 	// Section header: bold label over a subtle rule (the lipgloss list look).
 	styleSectionTitle = lipgloss.NewStyle().Foreground(fg).Bold(true)
 

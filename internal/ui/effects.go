@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"sync"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
@@ -8,9 +12,19 @@ func (m model) spinner() string {
 	return spinnerFrames[m.spinFrame%len(spinnerFrames)]
 }
 
-// wordmark is the compact one-color logo used in headers and overlays.
+// wordmark is the compact one-color logo used in headers and overlays. It's
+// static, so it's rendered once (lazily, after lipgloss has detected the
+// terminal's color profile) and reused — it appears on every browse frame.
+var (
+	wordmarkOnce sync.Once
+	wordmarkStr  string
+)
+
 func wordmark() string {
-	return lipgloss.NewStyle().Foreground(purple).Bold(true).Render("◆ polytui")
+	wordmarkOnce.Do(func() {
+		wordmarkStr = lipgloss.NewStyle().Foreground(purple).Bold(true).Render("◆ polytui")
+	})
+	return wordmarkStr
 }
 
 // wordmarkLarge is the framed logo shown on the splash — letter-spaced name in

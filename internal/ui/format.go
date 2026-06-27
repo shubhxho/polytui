@@ -70,7 +70,15 @@ func humanizeUntil(t time.Time) string {
 	days := int(d.Hours()) / 24
 	switch {
 	case days >= 365:
-		return fmt.Sprintf("%dy", days/365)
+		y, rem := days/365, (days%365)/30
+		if rem > 0 {
+			return fmt.Sprintf("%dy %dmo", y, rem)
+		}
+		return fmt.Sprintf("%dy", y)
+	case days >= 60:
+		return fmt.Sprintf("%dmo", days/30)
+	case days >= 14:
+		return fmt.Sprintf("%dw", days/7)
 	case days >= 1:
 		return fmt.Sprintf("%dd", days)
 	case d >= time.Hour:
